@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Plantilla CloudFormation que crea una VPC, una subred y una instancia EC2 asociada.
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Description: Bloque CIDR para la VPC (por ejemplo 192.168.0.0/16)
+    Default: 192.168.0.0/16
+
+  SubnetCidr:
+    Type: String
+    Description: Bloque CIDR para la subred (por ejemplo 192.168.1.0/24)
+    Default: 192.168.1.0/24
+
+  VpcName:
+    Type: String
+    Description: Nombre para etiquetar la VPC
+    Default: mi-vpc-diego
+
+  SubnetName:
+    Type: String
+    Description: Nombre para etiquetar la subred
+    Default: mi-subred-diego
+
+  InstanceType:
+    Type: String
+    Description: Tipo de instancia EC2
+    Default: t2.micro
+  
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Nombre de la KeyPair existente para el acceso SSH
+    Default: vockey
+
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI para la instancia EC2 (ej. Amazon Linux 2)
+    Default: ami-07ff62358b87c7116
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref VpcName
+
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref SubnetCidr
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: !Ref SubnetName
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Permite SSH desde la red local
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: sg-ec2-diego
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      SubnetId: !Ref Subnet
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: ec2-diego
+
+Outputs:
+  VpcId:
+    Description: ID de la VPC creada
+    Value: !Ref VPC
+
+  SubnetId:
+    Description: ID de la subred creada
+    Value: !Ref Subnet
+
+  InstanceId:
+    Description: ID de la instancia EC2
+    Value: !Ref EC2Instance
