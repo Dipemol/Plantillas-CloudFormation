@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  Environment:
+    Description: Environment name, used as a prefix for resources
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - beta
+      - prod
+    ConstraintDescription: Use valid Environment [dev, qa, beta, prod]
+
+Mappings:
+  QuantityOfInstances:
+    dev:
+      qty: 1
+    qa:
+      qty: 2
+    beta:
+      qty: 3
+    prod:
+      qty: 4
+
+Resources:
+  DemoResource:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: InstanceQuantity
+          Value: !FindInMap
+            - QuantityOfInstances
+            - !Ref Environment
+            - qty
