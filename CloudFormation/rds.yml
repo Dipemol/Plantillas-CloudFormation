@@ -69,8 +69,8 @@ Resources:
   WebAppSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Join ["-", [webapp-security-group, !Ref EnvironmentType]]
-      GroupDescription: "Allow HTTP/HTTPS and SSH inbound and outbound traffic"
+      GroupName: !Join ["-", [webapp-ec2-sg, !Ref EnvironmentType]]
+      GroupDescription: "Allow HTTP/HTTPS and SSH inbound traffic"
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -84,10 +84,18 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ["-", [webapp-rds-sg, !Ref EnvironmentType]]
+      GroupDescription: "Allow PostgreSQL access only from EC2"
+      SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 5432
           ToPort: 5432
-          CidrIp: 0.0.0.0/0
+          SourceSecurityGroupId: !GetAtt WebAppSecurityGroup.GroupId
+
 
   WebAppEIP:
     Type: AWS::EC2::EIP
@@ -103,7 +111,7 @@ Resources:
     Properties:
       DBInstanceIdentifier: !Ref DBInstanceIdentifier
       VPCSecurityGroups:
-        - !GetAtt WebAppSecurityGroup.GroupId
+        - !GetAtt DatabaseSecurityGroup.GroupId
       AllocatedStorage: "20"
       DBInstanceClass: db.t3.micro
       Engine: postgres
