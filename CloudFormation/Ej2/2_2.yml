@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VPC con CIDR dinámico por región, subredes en AZs dinámicas e IGW opcional
+
+Parameters:
+  AttachInternetGateway:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: Determina si se adjunta un Internet Gateway a la VPC
+
+Mappings:
+  RegionToVpcCidr:
+    us-east-1:
+      VpcCidr: 10.0.0.0/20
+    us-west-2:
+      VpcCidr: 172.16.0.0/20
+
+Conditions:
+  CreateIGW: !Equals [ !Ref AttachInternetGateway, "true" ]
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap
+        - RegionToVpcCidr
+        - !Ref AWS::Region
+        - VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: DynamicVPC
+
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      CidrBlock: !Select
+        - 0
+        - !Cidr
+          - !GetAtt VPC.CidrBlock
+          - 2
+          - 8
+      Tags:
+        - Key: Name
+          Value: Subnet-A
+
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ''
+      CidrBlock: !Select
+        - 1
+        - !Cidr
+          - !GetAtt VPC.CidrBlock
+          - 2
+          - 8
+      Tags:
+        - Key: Name
+          Value: Subnet-B
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateIGW
+    Properties:
+      Tags:
+        - Key: Name
+          Value: DynamicIGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateIGW
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+Outputs:
+  VpcId:
+    Description: ID de la VPC creada
+    Value: !Ref VPC
+
+  IgwAttached:
+    Description: Indica si el Internet Gateway fue adjuntado
+    Value: !If [ CreateIGW, "true", "false" ]

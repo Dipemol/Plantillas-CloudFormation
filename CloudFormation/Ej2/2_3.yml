@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ALB y Auto Scaling Group multi-AZ con visibilidad pública o privada
+
+Parameters:
+  BaseName:
+    Type: String
+    Default: vivalalandingzone
+    Description: Nombre base para los recursos
+
+  ALBPublico:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: Indica si el ALB será accesible desde Internet
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC donde se desplegarán los recursos
+
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subredes en múltiples AZs
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+
+  AMI:
+    Type: AWS::EC2::Image::Id
+    Description: AMI para las instancias del Auto Scaling Group
+    Default: ami-0b6c6ebed2801a5cb
+
+Conditions:
+  ALBInternetFacing: !Equals [ !Ref ALBPublico, "true" ]
+
+Resources:
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Acceso HTTP al ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Ref BaseName, -diego-alb-sg ] ]
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Join [ "-", [ !Ref BaseName, -diego-alb ] ]
+      Scheme: !If
+        - ALBInternetFacing
+        - internet-facing
+        - internal
+      Type: application
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets: !Ref Subnets
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Ref BaseName, -diego-alb ] ]
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Join [ "-", [ !Ref BaseName, -diego-tg ] ]
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: instance
+      HealthCheckPath: /
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Ref BaseName, -diego-tg ] ]
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Join [ "-", [ !Ref BaseName, -diego-lt ] ]
+      LaunchTemplateData:
+        ImageId: !Ref AMI
+        InstanceType: !Ref InstanceType
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            yum install -y httpd
+            systemctl start httpd
+            echo "Hola desde el Auto Scaling Group" > /var/www/html/index.html
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref Subnets
+      DesiredCapacity: 2
+      MinSize: 1
+      MaxSize: 3
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Ref BaseName, -diego-asg ] ]
+          PropagateAtLaunch: true
+
+Outputs:
+  ALBDNSName:
+    Description: DNS del Application Load Balancer
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  ALBScheme:
+    Description: Esquema del ALB
+    Value: !If [ ALBInternetFacing, internet-facing, internal ]

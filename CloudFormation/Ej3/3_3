@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Bucket S3 con nivel de acceso configurable y política dinámica
+
+Parameters:
+  NombreBucket:
+    Type: String
+    Description: Nombre del bucket S3
+
+  Acceso:
+    Type: String
+    AllowedValues:
+      - Privado
+      - Publico
+    Default: Privado
+    Description: Nivel de acceso al bucket
+
+  Entorno:
+    Type: String
+    AllowedValues:
+      - Dev
+      - Prod
+    Default: Dev
+
+Mappings:
+  EnvToStorageClass:
+    Dev:
+      StorageClass: STANDARD_IA
+    Prod:
+      StorageClass: INTELLIGENT_TIERING
+
+Conditions:
+  IsPublicBucket: !Equals [ !Ref Acceso, Public ]
+
+Resources:
+  ### Bucket S3 ###
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref NombreBucket
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: !If [ IsPublicBucket, false, true ]
+        IgnorePublicAcls: !If [ IsPublicBucket, false, true ]
+        BlockPublicPolicy: !If [ IsPublicBucket, false, true ]
+        RestrictPublicBuckets: !If [ IsPublicBucket, false, true ]
+      LifecycleConfiguration:
+        Rules:
+          - Id: StorageClassRule
+            Status: Enabled
+            Transitions:
+              - StorageClass: !FindInMap
+                  - EnvToStorageClass
+                  - !Ref Entorno
+                  - StorageClass
+                TransitionInDays: 30
+
+  ### Bucket Policy ###
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: IsPublicBucket
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadAccess
+            Effect: Allow
+            Principal: "*"
+            Action:
+              - s3:GetObject
+            Resource: !Sub "${S3Bucket.Arn}/*"
+
+Outputs:
+  BucketArn:
+    Description: ARN del bucket S3
+    Value: !GetAtt S3Bucket.Arn
+
+  UploadURL:
+    Description: URL para cargar archivos al bucket
+    Value: !Sub "https://${NombreBucket}.s3.amazonaws.com/"
